@@ -93,7 +93,14 @@ impl Config {
         };
         let path = Path::new(&config_path);
         if !path.exists() {
-            log::info!("配置文件不存在，使用默认配置: {}", path.display());
+            // 自动创建默认配置文件
+            if let Some(parent) = path.parent()
+                && !parent.exists()
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, EXAMPLE_CONFIG)?;
+            log::info!("已创建默认配置文件: {}", path.display());
             return Ok(Self::default());
         }
         let content = std::fs::read_to_string(path)
