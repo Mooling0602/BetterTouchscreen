@@ -2,6 +2,16 @@
 
 将多点触控（触屏）输入转换为触摸板手势的 Linux 工具，专为 Wayland 桌面环境设计。
 
+## 用法
+
+当前仅实现了虚拟触摸板功能，执行 `cargo run` 可以启动虚拟触摸板，将触摸信号转换成触摸板手势事件。
+
+> 暂时请使用 Ctrl + C 停止程序；若要避免使用 root 权限，可以将当前用户添加到 `input` 组。
+
+配置文件位于 `~/.config/bettertouchscreen/config.toml`。
+
+> 若使用sudo，则家目录位于 `/root` 而非 `/home/<user>`。
+
 ## 项目目标
 
 在 Linux/Wayland 桌面上，触屏设备虽然支持多点触控，但第三方应用通常没有进行额外适配，**BetterTouchscreen** 的目标是通过一系列模块来改善触摸体验：
