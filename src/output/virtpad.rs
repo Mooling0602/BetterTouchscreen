@@ -176,8 +176,8 @@ impl VirtualTouchpad {
                             + std::time::Duration::from_millis(DRAG_RELEASE_WINDOW_MS as u64),
                     );
                     debug!("拖拽结束: 延迟释放 BTN_LEFT ({}ms)", DRAG_RELEASE_WINDOW_MS);
-                } else if !self.pointer_moved {
-                    // 无移动的轻触 → 左键点击
+                } else if !event.suppress_click && !self.pointer_moved {
+                    // 无移动的轻触 → 左键点击（被中断的 handler 切换除外）
                     let mut emitter = EventEmitter::new(&mut self.device);
                     emitter.emit_click()?;
                 }

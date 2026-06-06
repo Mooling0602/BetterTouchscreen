@@ -1,12 +1,13 @@
 use anyhow::Result;
 use bettertouchscreen::cli::Cli;
 use bettertouchscreen::config::Config;
+use bettertouchscreen::debug::overlay::TouchOverlay;
 use bettertouchscreen::gesture::engine::GestureEngine;
 use bettertouchscreen::input::touch_input::{self, TouchScreen};
 use bettertouchscreen::output::virtpad::VirtualTouchpad;
 use clap::Parser;
 use fern::colors::{Color, ColoredLevelConfig};
-use log::{error, info};
+use log::{error, info, warn};
 
 fn init_logging(log_file: Option<&str>) -> Result<()> {
     // 默认日志文件：~/.cache/bettertouchscreen/bettertouchscreen.log
@@ -95,6 +96,8 @@ fn main() -> Result<()> {
     info!("BetterTouchscreen — 触屏多点触控 → 触摸板手势");
     info!("配置: {:?}", config);
 
+    let debug_enabled = cli.debug_overlay || config.debug_overlay;
+
     let mut touchscreen = if let Some(path) = &cli.device {
         TouchScreen::open(path)?
     } else {
@@ -102,6 +105,25 @@ fn main() -> Result<()> {
     };
 
     info!("触屏设备: {}", touchscreen.name().unwrap_or("未知"));
+
+    // 获取触控设备最大坐标用于叠加层缩放
+    let touch_max = touchscreen.max_coordinates().unwrap_or((0.0, 0.0));
+    info!("触控设备最大坐标: {}x{}", touch_max.0, touch_max.1);
+
+    let debug_overlay = if debug_enabled {
+        match TouchOverlay::new(touch_max.0, touch_max.1) {
+            Ok(o) => {
+                info!("调试叠加层已启用");
+                Some(o)
+            }
+            Err(e) => {
+                warn!("无法创建调试叠加层: {}，继续运行", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     let mut engine = GestureEngine::new(config);
     let mut virtpad = VirtualTouchpad::new()?;
@@ -111,6 +133,10 @@ fn main() -> Result<()> {
     loop {
         match touchscreen.read_touch_frame() {
             Ok(touches) => {
+                if let Some(ref overlay) = debug_overlay {
+                    overlay.update(touches.clone());
+                }
+
                 let events = engine.process(&touches);
                 for event in &events {
                     if let Err(e) = virtpad.emit_gesture(event) {

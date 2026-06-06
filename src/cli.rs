@@ -28,4 +28,8 @@ pub struct Cli {
     /// 日志文件路径（默认 trace 级别，控制台为 info 级别）
     #[arg(long)]
     pub log_file: Option<String>,
+
+    /// 启用调试叠加层，在屏幕上显示触控点位置
+    #[arg(long)]
+    pub debug_overlay: bool,
 }

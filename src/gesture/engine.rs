@@ -62,6 +62,8 @@ pub struct GestureEngine {
     handlers: Vec<GestureHandlerWrapper>,
     active: Option<usize>,
     prev_touches: Vec<TouchPoint>,
+    /// 多指手势结束后有残留手指时置 true，防止残留手指触发新的 Pointer 点击
+    was_multitouch: bool,
 }
 
 impl GestureEngine {
@@ -75,6 +77,7 @@ impl GestureEngine {
             handlers,
             active: None,
             prev_touches: Vec::new(),
+            was_multitouch: false,
         }
     }
 
@@ -89,10 +92,17 @@ impl GestureEngine {
         if finger_count == 0 {
             let events = self.deactivate(true);
             self.prev_touches.clear();
+            self.was_multitouch = false;
             return events;
         }
 
-        // 2. 检查当前 handler 是否仍匹配 finger_count
+        // 2. 多指手势结束后仍有残留手指 → 压制，直到所有手指抬起
+        if self.was_multitouch {
+            self.prev_touches = touches.to_vec();
+            return vec![];
+        }
+
+        // 3. 检查当前 handler 是否仍匹配 finger_count
         if let Some(idx) = self.active
             && !self.handlers[idx].finger_range().contains(&finger_count)
         {
@@ -100,20 +110,29 @@ impl GestureEngine {
                 "手指数变化，切换 handler: {:?} → {}指",
                 self.active, finger_count
             );
+            let handler_min = *self.handlers[idx].finger_range().start();
+            let was_multifinger = handler_min >= 2;
             let mut events = self.deactivate(false);
+            // 仅当手指数减少到低于 handler 最小手指数时压制（如 2→1），
+            // 手指数增加时（如 2→3）不压制，允许上层 re-activate
+            if was_multifinger && finger_count > 0 && finger_count < handler_min {
+                self.was_multitouch = true;
+                self.prev_touches = touches.to_vec();
+                return events;
+            }
             events.extend(self.try_activate(finger_count, touches));
             self.prev_touches = touches.to_vec();
             return events;
         }
 
-        // 3. 无激活 handler → 尝试激活
+        // 5. 无激活 handler → 尝试激活
         if self.active.is_none() {
             let events = self.try_activate(finger_count, touches);
             self.prev_touches = touches.to_vec();
             return events;
         }
 
-        // 4. 正常更新
+        // 6. 正常更新
         let events = self.call_update(touches);
         trace!("引擎 update 产生 {} 个事件", events.len());
 

@@ -31,6 +31,9 @@ pub const EXAMPLE_CONFIG: &str = r###"# BetterTouchscreen 配置文件
 
 # 滚动灵敏度，值越大滚动越快
 # scroll_sensitivity = 0.05
+
+# 启用调试叠加层，在屏幕上显示触控点位置（需要 Wayland）
+# debug_overlay = false
 "###;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -47,6 +50,9 @@ pub struct Config {
     /// 滚动灵敏度，越小越慢，默认 0.05
     #[serde(default = "default_scroll_sensitivity")]
     pub scroll_sensitivity: f64,
+    /// 启用调试叠加层，在屏幕上显示触控点位置
+    #[serde(default)]
+    pub debug_overlay: bool,
 }
 
 fn default_scroll_threshold() -> f64 {
@@ -75,6 +81,7 @@ impl Default for Config {
             swipe_deadzone: default_swipe_deadzone(),
             pointer_sensitivity: default_pointer_sensitivity(),
             scroll_sensitivity: default_scroll_sensitivity(),
+            debug_overlay: false,
         }
     }
 }

@@ -1,5 +1,6 @@
 pub mod cli;
 pub mod config;
+pub mod debug;
 pub mod gesture;
 pub mod input;
 pub mod math;

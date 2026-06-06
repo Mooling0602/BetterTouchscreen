@@ -1,6 +1,6 @@
 use crate::types::TouchPoint;
 use anyhow::{Context, Result};
-use evdev::{AbsoluteAxisCode, BusType, Device, EventSummary, InputEvent, SynchronizationCode};
+use evdev::{AbsoluteAxisCode, BusType, Device, EventSummary, InputEvent, KeyCode, SynchronizationCode};
 use log::{debug, info, trace, warn};
 use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
@@ -22,6 +22,8 @@ pub struct TouchScreen {
     current_slot: usize,
     /// 当前批次中 SYN_REPORT 之后剩余的事件，留待下次 read_touch_frame 处理
     buffered_events: Vec<InputEvent>,
+    /// 当前帧内收到 BTN_TOUCH=0，表示所有触点已释放
+    btntouch_up: bool,
 }
 
 pub fn list_touchscreens() -> Vec<(String, String, bool)> {
@@ -79,6 +81,7 @@ impl TouchScreen {
             slots: [None; MAX_SLOTS],
             current_slot: 0,
             buffered_events: Vec::new(),
+            btntouch_up: false,
         })
     }
 
@@ -125,6 +128,23 @@ impl TouchScreen {
 
     pub fn name(&self) -> Option<&str> {
         self.device.name()
+    }
+
+    /// 返回触控设备的最大坐标 (x, y)，用于坐标缩放
+    pub fn max_coordinates(&self) -> Result<(f64, f64)> {
+        let mut max_x = 0i32;
+        let mut max_y = 0i32;
+        for (code, info) in self.device.get_absinfo()? {
+            match code {
+                AbsoluteAxisCode::ABS_MT_POSITION_X => max_x = info.maximum(),
+                AbsoluteAxisCode::ABS_MT_POSITION_Y => max_y = info.maximum(),
+                _ => {}
+            }
+        }
+        if max_x == 0 || max_y == 0 {
+            anyhow::bail!("无法获取触控设备最大坐标: max_x={}, max_y={}", max_x, max_y);
+        }
+        Ok((max_x as f64, max_y as f64))
     }
 
     pub fn read_touch_frame(&mut self) -> Result<Vec<TouchPoint>> {
@@ -221,7 +241,20 @@ impl TouchScreen {
                         }
                         _ => {}
                     },
+                    EventSummary::Key(_, KeyCode::BTN_TOUCH, value) => {
+                        // 有些驱动用 BTN_TOUCH=0 表示所有触点释放，而非逐槽位 tracking_id=-1
+                        if value == 0 {
+                            self.btntouch_up = true;
+                        } else {
+                            self.btntouch_up = false;
+                        }
+                    }
                     EventSummary::Synchronization(_, SynchronizationCode::SYN_REPORT, _) => {
+                        // BTN_TOUCH=0 表示全部触点已释放，兜底清除所有槽位
+                        if self.btntouch_up {
+                            self.slots = [None; MAX_SLOTS];
+                            self.btntouch_up = false;
+                        }
                         let points: Vec<TouchPoint> = self
                             .slots
                             .iter()

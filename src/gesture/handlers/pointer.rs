@@ -90,6 +90,8 @@ impl GestureHandler for PointerHandler {
     fn end(&mut self, all_fingers_up: bool) -> Vec<GestureEvent> {
         let mut event = GestureEvent::new(GestureType::Pointer, 1, GestureState::End);
         event.is_drag = self.drag_active;
+        // 因手指数变化被中断（非所有手指抬起）→ 不触发点击
+        event.suppress_click = !all_fingers_up;
 
         // 只在所有手指离开时记录轻触；因手指数变化切换时清空，防止误判双击
         if all_fingers_up && !self.drag_active && !self.has_moved {

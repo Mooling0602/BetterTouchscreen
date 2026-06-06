@@ -26,6 +26,8 @@ pub struct GestureEvent {
     pub is_tap: bool,
     /// 单指进入拖拽模式（hold → BTN_LEFT 按下）
     pub is_drag: bool,
+    /// 手势被中断（手指数变化导致 handler 切换），不应触发点击
+    pub suppress_click: bool,
 }
 
 impl GestureEvent {
@@ -39,6 +41,7 @@ impl GestureEvent {
             state,
             is_tap: false,
             is_drag: false,
+            suppress_click: false,
         }
     }
 }
