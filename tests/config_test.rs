@@ -27,14 +27,6 @@ fn config_auto_creation_default_path() {
         "配置文件应包含scroll_threshold"
     );
     assert!(
-        content.contains("swipe_threshold"),
-        "配置文件应包含swipe_threshold"
-    );
-    assert!(
-        content.contains("swipe_deadzone"),
-        "配置文件应包含swipe_deadzone"
-    );
-    assert!(
         content.contains("pointer_sensitivity"),
         "配置文件应包含pointer_sensitivity"
     );
@@ -45,8 +37,6 @@ fn config_auto_creation_default_path() {
 
     // 验证返回的是默认配置
     assert_eq!(config.scroll_threshold, 5.0);
-    assert_eq!(config.swipe_threshold, 50.0);
-    assert_eq!(config.swipe_deadzone, 30.0);
     assert_eq!(config.pointer_sensitivity, 0.5);
     assert_eq!(config.scroll_sensitivity, 0.05);
 }
@@ -79,8 +69,6 @@ fn config_load_existing_file() {
     // 创建自定义配置文件
     let custom_config = r#"
 scroll_threshold = 10.0
-swipe_threshold = 100.0
-swipe_deadzone = 60.0
 pointer_sensitivity = 0.8
 scroll_sensitivity = 0.1
 "#;
@@ -93,8 +81,6 @@ scroll_sensitivity = 0.1
 
     // 验证加载的是自定义配置
     assert_eq!(config.scroll_threshold, 10.0);
-    assert_eq!(config.swipe_threshold, 100.0);
-    assert_eq!(config.swipe_deadzone, 60.0);
     assert_eq!(config.pointer_sensitivity, 0.8);
     assert_eq!(config.scroll_sensitivity, 0.1);
 }
@@ -119,8 +105,6 @@ scroll_threshold = 15.0
 
     // 验证自定义值和默认值混合
     assert_eq!(config.scroll_threshold, 15.0); // 自定义值
-    assert_eq!(config.swipe_threshold, 50.0); // 默认值
-    assert_eq!(config.swipe_deadzone, 30.0); // 默认值
     assert_eq!(config.pointer_sensitivity, 0.5); // 默认值
     assert_eq!(config.scroll_sensitivity, 0.05); // 默认值
     // 轴变换字段默认应为 false
@@ -149,6 +133,4 @@ invert_y = false
     assert!(config.swap_axes);
     assert!(config.invert_x);
     assert!(!config.invert_y);
-    // 未指定的字段使用默认值
-    assert_eq!(config.swipe_threshold, 50.0);
 }

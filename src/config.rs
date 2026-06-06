@@ -20,12 +20,6 @@ pub const EXAMPLE_CONFIG: &str = r###"# BetterTouchscreen 配置文件
 # 滚动检测阈值（设备像素），低于此值的移动不触发滚动
 # scroll_threshold = 5.0
 
-# 滑动检测阈值（设备像素）
-# swipe_threshold = 50.0
-
-# 滑动死区（设备像素）
-# swipe_deadzone = 30.0
-
 # 光标灵敏度，值越大光标移动越快
 # pointer_sensitivity = 0.5
 
@@ -63,10 +57,6 @@ pub const EXAMPLE_CONFIG: &str = r###"# BetterTouchscreen 配置文件
 pub struct Config {
     #[serde(default = "default_scroll_threshold")]
     pub scroll_threshold: f64,
-    #[serde(default = "default_swipe_threshold")]
-    pub swipe_threshold: f64,
-    #[serde(default = "default_swipe_deadzone")]
-    pub swipe_deadzone: f64,
     /// 光标灵敏度，0.0~1.0，默认 0.5
     #[serde(default = "default_pointer_sensitivity")]
     pub pointer_sensitivity: f64,
@@ -97,12 +87,6 @@ pub struct Config {
 fn default_scroll_threshold() -> f64 {
     5.0
 }
-fn default_swipe_threshold() -> f64 {
-    50.0
-}
-fn default_swipe_deadzone() -> f64 {
-    30.0
-}
 
 fn default_pointer_sensitivity() -> f64 {
     0.5
@@ -120,8 +104,6 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             scroll_threshold: default_scroll_threshold(),
-            swipe_threshold: default_swipe_threshold(),
-            swipe_deadzone: default_swipe_deadzone(),
             pointer_sensitivity: default_pointer_sensitivity(),
             scroll_sensitivity: default_scroll_sensitivity(),
             debug_overlay: false,
