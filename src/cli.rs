@@ -32,4 +32,8 @@ pub struct Cli {
     /// 启用调试叠加层，在屏幕上显示触控点位置
     #[arg(long)]
     pub debug_overlay: bool,
+
+    /// 触屏方向校准模式：引导用户滑动两次，自动计算并保存坐标轴变换配置
+    #[arg(long)]
+    pub rotate_helper: bool,
 }

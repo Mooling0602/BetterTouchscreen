@@ -5,6 +5,7 @@ use bettertouchscreen::debug::overlay::TouchOverlay;
 use bettertouchscreen::gesture::engine::GestureEngine;
 use bettertouchscreen::input::touch_input::{self, TouchScreen};
 use bettertouchscreen::output::virtpad::VirtualTouchpad;
+use bettertouchscreen::types;
 use clap::Parser;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{error, info, warn};
@@ -92,12 +93,6 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let config = Config::load(cli.config.as_deref())?;
-    info!("BetterTouchscreen — 触屏多点触控 → 触摸板手势");
-    info!("配置: {:?}", config);
-
-    let debug_enabled = cli.debug_overlay || config.debug_overlay;
-
     let mut touchscreen = if let Some(path) = &cli.device {
         TouchScreen::open(path)?
     } else {
@@ -106,12 +101,40 @@ fn main() -> Result<()> {
 
     info!("触屏设备: {}", touchscreen.name().unwrap_or("未知"));
 
+    // 触屏方向校准模式
+    if cli.rotate_helper {
+        info!("进入触屏方向校准模式（调试叠加层已禁用）");
+        bettertouchscreen::calibration::run_calibration(
+            &mut touchscreen,
+            cli.config.as_deref(),
+        )?;
+        return Ok(());
+    }
+
+    let config = Config::load(cli.config.as_deref())?;
+    info!("BetterTouchscreen — 触屏多点触控 → 触摸板手势");
+    info!("配置: {:?}", config);
+
+    let debug_enabled = cli.debug_overlay || config.debug_overlay;
+
     // 获取触控设备最大坐标用于叠加层缩放
     let touch_max = touchscreen.max_coordinates().unwrap_or((0.0, 0.0));
     info!("触控设备最大坐标: {}x{}", touch_max.0, touch_max.1);
 
+    // 坐标轴变换后的有效最大值 — 用于叠加层缩放和坐标反转
+    let eff_max_x = if config.swap_axes {
+        touch_max.1
+    } else {
+        touch_max.0
+    };
+    let eff_max_y = if config.swap_axes {
+        touch_max.0
+    } else {
+        touch_max.1
+    };
+
     let debug_overlay = if debug_enabled {
-        match TouchOverlay::new(touch_max.0, touch_max.1) {
+        match TouchOverlay::new(eff_max_x, eff_max_y) {
             Ok(o) => {
                 info!("调试叠加层已启用");
                 Some(o)
@@ -134,7 +157,18 @@ fn main() -> Result<()> {
         match touchscreen.read_touch_frame() {
             Ok(touches) => {
                 if let Some(ref overlay) = debug_overlay {
-                    overlay.update(touches.clone());
+                    let mut overlay_touches = touches.clone();
+                    if config.swap_axes || config.invert_x || config.invert_y {
+                        types::transform_touch_coords(
+                            &mut overlay_touches,
+                            config.swap_axes,
+                            config.invert_x,
+                            config.invert_y,
+                            eff_max_x,
+                            eff_max_y,
+                        );
+                    }
+                    overlay.update(overlay_touches);
                 }
 
                 let events = engine.process(&touches);

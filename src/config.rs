@@ -34,9 +34,25 @@ pub const EXAMPLE_CONFIG: &str = r###"# BetterTouchscreen 配置文件
 
 # 启用调试叠加层，在屏幕上显示触控点位置（需要 Wayland）
 # debug_overlay = false
+
+# 坐标轴变换（屏幕旋转/镜像补偿）
+# 当触屏方向与显示方向不匹配时，通过以下三个参数校准
+# 所有参数默认 false，可根据实际设备组合使用：
+#   180° 旋转: invert_x = true, invert_y = true
+#   90° 顺时针: swap_axes = true, invert_y = true
+#   90° 逆时针: swap_axes = true, invert_x = true
+
+# 交换 X / Y 轴（覆盖 90°/270° 旋转场景）
+# swap_axes = false
+
+# X 轴方向反转
+# invert_x = false
+
+# Y 轴方向反转
+# invert_y = false
 "###;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "default_scroll_threshold")]
     pub scroll_threshold: f64,
@@ -51,8 +67,18 @@ pub struct Config {
     #[serde(default = "default_scroll_sensitivity")]
     pub scroll_sensitivity: f64,
     /// 启用调试叠加层，在屏幕上显示触控点位置
+    #[allow(dead_code)]
     #[serde(default)]
     pub debug_overlay: bool,
+    /// 交换 X/Y 轴（覆盖 90°/270° 旋转场景）
+    #[serde(default)]
+    pub swap_axes: bool,
+    /// X 轴方向反转
+    #[serde(default)]
+    pub invert_x: bool,
+    /// Y 轴方向反转
+    #[serde(default)]
+    pub invert_y: bool,
 }
 
 fn default_scroll_threshold() -> f64 {
@@ -82,6 +108,9 @@ impl Default for Config {
             pointer_sensitivity: default_pointer_sensitivity(),
             scroll_sensitivity: default_scroll_sensitivity(),
             debug_overlay: false,
+            swap_axes: false,
+            invert_x: false,
+            invert_y: false,
         }
     }
 }
@@ -133,6 +162,31 @@ impl Config {
         }
         std::fs::write(path, EXAMPLE_CONFIG)?;
         log::info!("已生成配置文件: {}", path.display());
+        Ok(())
+    }
+
+    /// 保存配置到文件
+    ///
+    /// 将当前配置序列化为 TOML 并写回配置文件。
+    /// 使用的路径与 load 一致。
+    pub fn save(&self, path: Option<&str>) -> anyhow::Result<()> {
+        let config_path = match path {
+            Some(p) => p.to_string(),
+            None => match default_config_path() {
+                Some(p) => p,
+                None => anyhow::bail!("无法确定默认配置目录"),
+            },
+        };
+        let path = Path::new(&config_path);
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+        let toml_str =
+            toml::to_string_pretty(self).map_err(|e| anyhow::anyhow!("序列化配置失败: {}", e))?;
+        std::fs::write(path, toml_str)?;
+        log::info!("配置已保存到: {}", path.display());
         Ok(())
     }
 }

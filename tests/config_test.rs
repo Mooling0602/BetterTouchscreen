@@ -123,4 +123,32 @@ scroll_threshold = 15.0
     assert_eq!(config.swipe_deadzone, 30.0); // 默认值
     assert_eq!(config.pointer_sensitivity, 0.5); // 默认值
     assert_eq!(config.scroll_sensitivity, 0.05); // 默认值
+    // 轴变换字段默认应为 false
+    assert!(!config.swap_axes);
+    assert!(!config.invert_x);
+    assert!(!config.invert_y);
+}
+
+#[test]
+fn config_axis_transform_fields() {
+    let dir = tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let custom_config = r#"
+scroll_threshold = 10.0
+swap_axes = true
+invert_x = true
+invert_y = false
+"#;
+    fs::write(&config_path, custom_config).unwrap();
+
+    let path_str = config_path.to_string_lossy().to_string();
+    let config = Config::load(Some(&path_str)).unwrap();
+
+    assert_eq!(config.scroll_threshold, 10.0);
+    assert!(config.swap_axes);
+    assert!(config.invert_x);
+    assert!(!config.invert_y);
+    // 未指定的字段使用默认值
+    assert_eq!(config.swipe_threshold, 50.0);
 }

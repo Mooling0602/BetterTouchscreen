@@ -64,6 +64,8 @@ pub struct GestureEngine {
     prev_touches: Vec<TouchPoint>,
     /// 多指手势结束后有残留手指时置 true，防止残留手指触发新的 Pointer 点击
     was_multitouch: bool,
+    /// 触控坐标轴变换配置（屏幕旋转补偿）
+    config: Config,
 }
 
 impl GestureEngine {
@@ -78,6 +80,7 @@ impl GestureEngine {
             active: None,
             prev_touches: Vec::new(),
             was_multitouch: false,
+            config,
         }
     }
 
@@ -90,9 +93,10 @@ impl GestureEngine {
 
         // 1. 所有手指离开 → 结束当前手势
         if finger_count == 0 {
-            let events = self.deactivate(true);
+            let mut events = self.deactivate(true);
             self.prev_touches.clear();
             self.was_multitouch = false;
+            self.apply_config_transform(&mut events);
             return events;
         }
 
@@ -118,26 +122,42 @@ impl GestureEngine {
             if was_multifinger && finger_count > 0 && finger_count < handler_min {
                 self.was_multitouch = true;
                 self.prev_touches = touches.to_vec();
+                self.apply_config_transform(&mut events);
                 return events;
             }
             events.extend(self.try_activate(finger_count, touches));
             self.prev_touches = touches.to_vec();
+            self.apply_config_transform(&mut events);
             return events;
         }
 
         // 5. 无激活 handler → 尝试激活
         if self.active.is_none() {
-            let events = self.try_activate(finger_count, touches);
+            let mut events = self.try_activate(finger_count, touches);
             self.prev_touches = touches.to_vec();
+            self.apply_config_transform(&mut events);
             return events;
         }
 
         // 6. 正常更新
-        let events = self.call_update(touches);
+        let mut events = self.call_update(touches);
         trace!("引擎 update 产生 {} 个事件", events.len());
 
         self.prev_touches = touches.to_vec();
+        self.apply_config_transform(&mut events);
         events
+    }
+
+    fn apply_config_transform(&self, events: &mut [GestureEvent]) {
+        if self.config.swap_axes || self.config.invert_x || self.config.invert_y {
+            for event in events.iter_mut() {
+                event.apply_axis_transform(
+                    self.config.swap_axes,
+                    self.config.invert_x,
+                    self.config.invert_y,
+                );
+            }
+        }
     }
 
     fn call_update(&mut self, touches: &[TouchPoint]) -> Vec<GestureEvent> {
