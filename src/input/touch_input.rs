@@ -1,7 +1,7 @@
 use crate::types::TouchPoint;
 use anyhow::{Context, Result};
 use evdev::{AbsoluteAxisCode, BusType, Device, EventSummary, InputEvent, KeyCode, SynchronizationCode};
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
 
@@ -243,11 +243,7 @@ impl TouchScreen {
                     },
                     EventSummary::Key(_, KeyCode::BTN_TOUCH, value) => {
                         // 有些驱动用 BTN_TOUCH=0 表示所有触点释放，而非逐槽位 tracking_id=-1
-                        if value == 0 {
-                            self.btntouch_up = true;
-                        } else {
-                            self.btntouch_up = false;
-                        }
+                        self.btntouch_up = value == 0;
                     }
                     EventSummary::Synchronization(_, SynchronizationCode::SYN_REPORT, _) => {
                         // BTN_TOUCH=0 表示全部触点已释放，兜底清除所有槽位
@@ -267,7 +263,7 @@ impl TouchScreen {
                                 tracking_id: info.tracking_id,
                             })
                             .collect();
-                        debug!("触控帧: {} 点", points.len());
+                        trace!("触控帧: {} 点", points.len());
                         return Ok(points);
                     }
                     _ => {}

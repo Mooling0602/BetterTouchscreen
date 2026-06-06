@@ -10,7 +10,7 @@ use clap::Parser;
 use fern::colors::{Color, ColoredLevelConfig};
 use log::{error, info, warn};
 
-fn init_logging(log_file: Option<&str>) -> Result<()> {
+fn init_logging(log_file: Option<&str>, debug_console: bool) -> Result<()> {
     // 默认日志文件：~/.cache/bettertouchscreen/bettertouchscreen.log
     let log_path = match log_file {
         Some(path) => path.to_string(),
@@ -42,7 +42,11 @@ fn init_logging(log_file: Option<&str>) -> Result<()> {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)
+        .level(if debug_console {
+            log::LevelFilter::Debug
+        } else {
+            log::LevelFilter::Info
+        })
         .chain(std::io::stdout());
 
     let mut dispatch = fern::Dispatch::new().chain(console);
@@ -70,7 +74,7 @@ fn init_logging(log_file: Option<&str>) -> Result<()> {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    init_logging(cli.log_file.as_deref())?;
+    init_logging(cli.log_file.as_deref(), cli.debug_overlay)?;
 
     if cli.list {
         let devices = touch_input::list_touchscreens();
@@ -93,7 +97,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let config = Config::load(cli.config.as_deref())?;
+
     let mut touchscreen = if let Some(path) = &cli.device {
+        TouchScreen::open(path)?
+    } else if let Some(ref path) = config.touchscreen_device
+        && !path.is_empty()
+    {
         TouchScreen::open(path)?
     } else {
         TouchScreen::find_touchscreen()?
@@ -110,8 +120,6 @@ fn main() -> Result<()> {
         )?;
         return Ok(());
     }
-
-    let config = Config::load(cli.config.as_deref())?;
     info!("BetterTouchscreen — 触屏多点触控 → 触摸板手势");
     info!("配置: {:?}", config);
 
@@ -148,14 +156,15 @@ fn main() -> Result<()> {
         None
     };
 
-    let mut engine = GestureEngine::new(config);
-    let mut virtpad = VirtualTouchpad::new()?;
+    let mut engine = GestureEngine::new(config.clone());
+    let mut virtpad = VirtualTouchpad::new(config.hscroll_threshold)?;
 
     info!("开始监听触控事件...");
 
     loop {
         match touchscreen.read_touch_frame() {
             Ok(touches) => {
+                // 调试叠加层（应用变换后的坐标）
                 if let Some(ref overlay) = debug_overlay {
                     let mut overlay_touches = touches.clone();
                     if config.swap_axes || config.invert_x || config.invert_y {

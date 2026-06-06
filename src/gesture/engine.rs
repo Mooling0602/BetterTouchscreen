@@ -5,7 +5,7 @@ use crate::gesture::handlers::GestureHandler;
 use crate::gesture::handlers::pointer::PointerHandler;
 use crate::gesture::handlers::scroll::ScrollHandler;
 use crate::types::{GestureEvent, TouchPoint};
-use log::{debug, trace};
+use log::{debug, info, trace};
 use std::ops::RangeInclusive;
 
 /// 静态分发的 gesture handler 包装枚举
@@ -66,13 +66,16 @@ pub struct GestureEngine {
     was_multitouch: bool,
     /// 触控坐标轴变换配置（屏幕旋转补偿）
     config: Config,
+    /// 本次触控周期（自所有手指抬起以来）已通过 info 级别通告过的手势
+    /// handler 位掩码，避免同手势重复 info
+    logged_mask: u8,
 }
 
 impl GestureEngine {
     pub fn new(config: Config) -> Self {
         let handlers = vec![
             GestureHandlerWrapper::Pointer(PointerHandler::new(&config)),
-            GestureHandlerWrapper::Scroll(ScrollHandler::new(config)),
+            GestureHandlerWrapper::Scroll(ScrollHandler::new(config.clone())),
         ];
 
         Self {
@@ -81,6 +84,7 @@ impl GestureEngine {
             prev_touches: Vec::new(),
             was_multitouch: false,
             config,
+            logged_mask: 0,
         }
     }
 
@@ -178,7 +182,15 @@ impl GestureEngine {
             .max_by_key(|(_, h)| h.priority());
 
         if let Some((idx, handler)) = best {
-            debug!("激活 handler: {} ({} 指)", handler.name(), finger_count);
+            let name = handler.name();
+            let fingers = finger_count;
+            let bit = 1u8 << idx;
+            if self.logged_mask & bit == 0 {
+                info!("手势切换: {} ({} 指)", name, fingers);
+                self.logged_mask |= bit;
+            } else {
+                debug!("激活 handler: {} ({} 指)", name, fingers);
+            }
             self.active = Some(idx);
             let prev = self.prev_touches.clone();
             self.handlers[idx].begin(touches, &prev)

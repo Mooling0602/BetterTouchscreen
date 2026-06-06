@@ -13,27 +13,56 @@ impl<'a> EventEmitter<'a> {
         Self { device }
     }
 
-    pub fn emit_scroll(&mut self, dx: f64, dy: f64) -> Result<()> {
+    pub fn emit_scroll(&mut self, dx: f64, dy: f64, hscroll_threshold: i32) -> Result<()> {
         let h_scroll = dx as i32;
         let v_scroll = dy as i32;
+        let has_h = hscroll_threshold > 0 && h_scroll.abs() >= hscroll_threshold;
 
-        let mut events: Vec<InputEvent> = Vec::new();
-
-        if h_scroll != 0 {
-            events
-                .push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_HWHEEL, h_scroll).into());
-        }
-
-        if v_scroll != 0 {
-            events
-                .push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, v_scroll).into());
-        }
-
-        if !events.is_empty() {
-            events
-                .push(evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into());
+        // 无有效水平滚动 → 纯垂直滚动
+        if !has_h && v_scroll != 0 {
+            let events: Vec<InputEvent> = vec![
+                evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, v_scroll).into(),
+                evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into(),
+            ];
             self.device.emit(&events)?;
+            return Ok(());
         }
+
+        // 无有效滚动
+        if !has_h && v_scroll == 0 {
+            return Ok(());
+        }
+
+        // 水平滚动：模拟 Shift + 滚轮
+        if has_h {
+            let shift_press = vec![
+                evdev::KeyEvent::new(KeyCode::KEY_LEFTSHIFT, 1).into(),
+                evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into(),
+            ];
+            self.device.emit(&shift_press)?;
+
+            let wheel = vec![
+                evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, h_scroll).into(),
+                evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into(),
+            ];
+            self.device.emit(&wheel)?;
+
+            // 如果同时有垂直滚动，在同一次 Shift 按下中发出
+            if v_scroll != 0 {
+                let v_wheel = vec![
+                    evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, v_scroll).into(),
+                    evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into(),
+                ];
+                self.device.emit(&v_wheel)?;
+            }
+
+            let shift_release = vec![
+                evdev::KeyEvent::new(KeyCode::KEY_LEFTSHIFT, 0).into(),
+                evdev::SynchronizationEvent::new(SynchronizationCode::SYN_REPORT, 0).into(),
+            ];
+            self.device.emit(&shift_release)?;
+        }
+
         Ok(())
     }
 

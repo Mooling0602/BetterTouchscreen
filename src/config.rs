@@ -50,9 +50,16 @@ pub const EXAMPLE_CONFIG: &str = r###"# BetterTouchscreen 配置文件
 
 # Y 轴方向反转
 # invert_y = false
+
+# 水平滚动最小阈值（设备像素），低于此值视为意外抖动，不触发 Shift 横向滚动
+# hscroll_threshold = 2
+
+# 触屏设备路径（可选，如 /dev/input/event6）
+# 若注释或留空，程序将自动查找首个可用的多点触控设备
+# touchscreen_device = "/dev/input/event26"
 "###;
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     #[serde(default = "default_scroll_threshold")]
     pub scroll_threshold: f64,
@@ -79,6 +86,12 @@ pub struct Config {
     /// Y 轴方向反转
     #[serde(default)]
     pub invert_y: bool,
+    /// 水平滚动最小阈值，低于此值不触发 Shift 横向滚动，默认 2
+    #[serde(default = "default_hscroll_threshold")]
+    pub hscroll_threshold: i32,
+    /// 触屏设备路径（如 /dev/input/event26），留空则自动识别
+    #[serde(default)]
+    pub touchscreen_device: Option<String>,
 }
 
 fn default_scroll_threshold() -> f64 {
@@ -99,6 +112,10 @@ fn default_scroll_sensitivity() -> f64 {
     0.05
 }
 
+fn default_hscroll_threshold() -> i32 {
+    2
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -111,6 +128,8 @@ impl Default for Config {
             swap_axes: false,
             invert_x: false,
             invert_y: false,
+            hscroll_threshold: default_hscroll_threshold(),
+            touchscreen_device: None,
         }
     }
 }

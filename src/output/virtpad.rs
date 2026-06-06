@@ -1,10 +1,13 @@
-// 虚拟触摸板 — uinput 设备创建 + 手势事件分发
+// 虚拟触摸板 — 通过 uinput 创建虚拟设备，发射手势事件
+//
+// 输出 REL_X/REL_Y 相对坐标事件（与 TouchpadEmulator 相同策略），
+// 设置 INPUT_PROP_DIRECT 属性让 libinput 正确识别并应用指针加速。
 
 use crate::output::emitter::EventEmitter;
 use crate::types::{GestureEvent, GestureState, GestureType};
 use anyhow::{Context, Result};
 use evdev::uinput::VirtualDevice;
-use evdev::{AttributeSet, KeyCode, RelativeAxisCode};
+use evdev::{AttributeSet, KeyCode, PropType, RelativeAxisCode};
 use log::{debug, info, trace};
 use std::time::Instant;
 
@@ -24,28 +27,35 @@ pub struct VirtualTouchpad {
     scroll_sub_y: f64,
     /// 拖拽结束后延迟释放 BTN_LEFT 的截止时间
     drag_release_deadline: Option<Instant>,
+    /// 水平滚动最小阈值
+    hscroll_threshold: i32,
 }
 
 impl VirtualTouchpad {
-    pub fn new() -> Result<Self> {
+    pub fn new(hscroll_threshold: i32) -> Result<Self> {
         let mut keys = AttributeSet::<KeyCode>::new();
         keys.insert(KeyCode::BTN_LEFT);
         keys.insert(KeyCode::BTN_RIGHT);
+        keys.insert(KeyCode::KEY_LEFTSHIFT);
 
         let mut rel_axes = AttributeSet::<RelativeAxisCode>::new();
         rel_axes.insert(RelativeAxisCode::REL_X);
         rel_axes.insert(RelativeAxisCode::REL_Y);
         rel_axes.insert(RelativeAxisCode::REL_WHEEL);
-        rel_axes.insert(RelativeAxisCode::REL_HWHEEL);
+
+        // INPUT_PROP_DIRECT — 与 TouchpadEmulator 一致，让 libinput 正确识别
+        let mut props = AttributeSet::<PropType>::new();
+        props.insert(PropType(0x01)); // INPUT_PROP_DIRECT
 
         let device = VirtualDevice::builder()?
             .name("BetterTouchscreen Virtual Touchpad")
             .with_keys(&keys)?
             .with_relative_axes(&rel_axes)?
+            .with_properties(&props)?
             .build()
             .context("无法创建 uinput 虚拟触摸板设备")?;
 
-        info!("已创建 uinput 虚拟触摸板设备");
+        info!("已创建 uinput 虚拟触摸板设备 (REL, INPUT_PROP_DIRECT)");
         Ok(Self {
             device,
             pointer_active: false,
@@ -56,6 +66,7 @@ impl VirtualTouchpad {
             scroll_sub_x: 0.0,
             scroll_sub_y: 0.0,
             drag_release_deadline: None,
+            hscroll_threshold,
         })
     }
 
@@ -159,7 +170,7 @@ impl VirtualTouchpad {
                 self.scroll_sub_x -= int_x as f64;
                 self.scroll_sub_y -= int_y as f64;
                 if int_x != 0 || int_y != 0 {
-                    emitter.emit_scroll(int_x as f64, int_y as f64)?;
+                    emitter.emit_scroll(int_x as f64, int_y as f64, self.hscroll_threshold)?;
                 }
             }
         }
@@ -186,7 +197,6 @@ impl VirtualTouchpad {
             }
             GestureType::Scroll if event.is_tap => {
                 // 2 指无移动 → 右键点击
-                // 如果拖拽 BTN_LEFT 还按着，先释放再右键
                 if self.drag_release_deadline.is_some() {
                     release_drag(&mut self.device)?;
                     self.drag_active = false;
@@ -199,8 +209,6 @@ impl VirtualTouchpad {
                 self.scroll_sub_y = 0.0;
             }
             GestureType::Scroll => {
-                // Scroll 手势结束，清零累积器
-                // 如果拖拽 BTN_LEFT 还按着，滚动开始时已释放，这里只需清零
                 self.scroll_sub_x = 0.0;
                 self.scroll_sub_y = 0.0;
             }

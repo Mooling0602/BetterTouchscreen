@@ -1,6 +1,6 @@
 use crate::types::TouchPoint;
 use anyhow::{Context, Result};
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::os::fd::{AsFd, OwnedFd};
 use std::sync::{Arc, Mutex};
 use wayland_client::{
@@ -238,13 +238,13 @@ fn render_frame(state: &mut OverlayState, qh: &QueueHandle<OverlayState>) -> Res
     let points = state.touches.lock().unwrap().clone();
     if !points.is_empty() {
         let coords: Vec<String> = points.iter().map(|p| format!("({:.0}, {:.0})", p.x, p.y)).collect();
-        info!("渲染 {} 个触点: {}", points.len(), coords.join(" "));
+        debug!("渲染 {} 个触点: {}", points.len(), coords.join(" "));
     }
     for (i, point) in points.iter().enumerate() {
         let (r, g, b) = COLOR_PALETTE[i % COLOR_PALETTE.len()];
         let sx = (point.x * state.scale_x) as i32;
         let sy = (point.y * state.scale_y) as i32;
-        draw_circle(buf_u32, w as usize, h as usize, sx, sy, CIRCLE_RADIUS, r, g, b, CIRCLE_ALPHA);
+        draw_circle(buf_u32, w as usize, h as usize, sx, sy, CIRCLE_RADIUS, (r, g, b, CIRCLE_ALPHA));
     }
 
     let pool = state.pool.as_ref().unwrap();
@@ -339,7 +339,16 @@ fn run_overlay(touches: Arc<Mutex<Vec<TouchPoint>>>, touch_max_x: f64, touch_max
 
 // ── Circle drawing ─────────────────────────────────────────────────
 
-fn draw_circle(buf: &mut [u32], w: usize, h: usize, cx: i32, cy: i32, r: i32, cr: u8, cg: u8, cb: u8, ca: u8) {
+fn draw_circle(
+    buf: &mut [u32],
+    w: usize,
+    h: usize,
+    cx: i32,
+    cy: i32,
+    r: i32,
+    color: (u8, u8, u8, u8), // (r, g, b, a)
+) {
+    let (cr, cg, cb, ca) = color;
     let fill = (ca as u32) << 24 | (cr as u32) << 16 | (cg as u32) << 8 | cb as u32;
     let border = 0xFF_000000u32;
     let outer = r + CIRCLE_BORDER;
