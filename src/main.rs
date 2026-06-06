@@ -9,8 +9,20 @@ use fern::colors::{Color, ColoredLevelConfig};
 use log::{error, info};
 
 fn init_logging(log_file: Option<&str>) -> Result<()> {
-    // 默认日志文件：当前目录下 bettertouchscreen.log
-    let log_path = log_file.unwrap_or("bettertouchscreen.log");
+    // 默认日志文件：~/.cache/bettertouchscreen/bettertouchscreen.log
+    let log_path = match log_file {
+        Some(path) => path.to_string(),
+        None => {
+            let cache_dir = dirs::cache_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
+                .join("bettertouchscreen");
+            std::fs::create_dir_all(&cache_dir)?;
+            cache_dir
+                .join("bettertouchscreen.log")
+                .to_string_lossy()
+                .to_string()
+        }
+    };
     let console_colors = ColoredLevelConfig::new()
         .info(Color::Green)
         .warn(Color::Yellow)
@@ -107,6 +119,13 @@ fn main() -> Result<()> {
                 }
             }
             Err(e) => {
+                // 检查是否为设备断开错误 (ENODEV)
+                if let Some(io_err) = e.downcast_ref::<std::io::Error>()
+                    && io_err.raw_os_error() == Some(libc::ENODEV)
+                {
+                    error!("触屏设备已断开 (ENODEV)，程序退出");
+                    std::process::exit(1);
+                }
                 error!("读取触控事件失败: {}", e);
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }

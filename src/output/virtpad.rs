@@ -71,9 +71,14 @@ impl VirtualTouchpad {
 
         trace!(
             "输出手势: {:?} state={:?} fingers={} delta=({:.1},{:.1}) scale={:.3} tap={} drag={}",
-            event.gesture_type, event.state, event.fingers,
-            event.delta_x, event.delta_y, event.scale,
-            event.is_tap, event.is_drag
+            event.gesture_type,
+            event.state,
+            event.fingers,
+            event.delta_x,
+            event.delta_y,
+            event.scale,
+            event.is_tap,
+            event.is_drag
         );
         match event.state {
             GestureState::Begin => {
@@ -83,7 +88,10 @@ impl VirtualTouchpad {
                     self.drag_active = false;
                     self.drag_release_deadline = None;
                 }
-                debug!("输出手势开始: {:?} ({}指)", event.gesture_type, event.fingers);
+                debug!(
+                    "输出手势开始: {:?} ({}指)",
+                    event.gesture_type, event.fingers
+                );
                 if event.gesture_type == GestureType::Pointer {
                     self.pointer_active = true;
                     self.pointer_moved = false;
@@ -163,7 +171,10 @@ impl VirtualTouchpad {
             GestureType::Pointer => {
                 if self.drag_active {
                     // 延迟释放 BTN_LEFT，保留选区供后续右键使用
-                    self.drag_release_deadline = Some(Instant::now() + std::time::Duration::from_millis(DRAG_RELEASE_WINDOW_MS as u64));
+                    self.drag_release_deadline = Some(
+                        Instant::now()
+                            + std::time::Duration::from_millis(DRAG_RELEASE_WINDOW_MS as u64),
+                    );
                     debug!("拖拽结束: 延迟释放 BTN_LEFT ({}ms)", DRAG_RELEASE_WINDOW_MS);
                 } else if !self.pointer_moved {
                     // 无移动的轻触 → 左键点击

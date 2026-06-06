@@ -20,11 +20,13 @@ impl<'a> EventEmitter<'a> {
         let mut events: Vec<InputEvent> = Vec::new();
 
         if h_scroll != 0 {
-            events.push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_HWHEEL, h_scroll).into());
+            events
+                .push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_HWHEEL, h_scroll).into());
         }
 
         if v_scroll != 0 {
-            events.push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, v_scroll).into());
+            events
+                .push(evdev::RelativeAxisEvent::new(RelativeAxisCode::REL_WHEEL, v_scroll).into());
         }
 
         if !events.is_empty() {

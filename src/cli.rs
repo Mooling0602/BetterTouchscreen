@@ -3,7 +3,11 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(name = "bettertouchscreen", about = "触屏多点触控转触摸板手势", version)]
+#[command(
+    name = "bettertouchscreen",
+    about = "触屏多点触控转触摸板手势",
+    version
+)]
 pub struct Cli {
     /// 指定触屏设备路径（如 /dev/input/event5）
     #[arg(short, long)]

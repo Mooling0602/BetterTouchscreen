@@ -1,23 +1,74 @@
 // 手势引擎 — 纯调度器，根据手指数路由到对应 handler
 
 use crate::config::Config;
+use crate::gesture::handlers::GestureHandler;
 use crate::gesture::handlers::pointer::PointerHandler;
 use crate::gesture::handlers::scroll::ScrollHandler;
-use crate::gesture::handlers::GestureHandler;
 use crate::types::{GestureEvent, TouchPoint};
 use log::{debug, trace};
+use std::ops::RangeInclusive;
+
+/// 静态分发的 gesture handler 包装枚举
+enum GestureHandlerWrapper {
+    Pointer(PointerHandler),
+    Scroll(ScrollHandler),
+}
+
+impl GestureHandlerWrapper {
+    fn finger_range(&self) -> RangeInclusive<u8> {
+        match self {
+            Self::Pointer(h) => h.finger_range(),
+            Self::Scroll(h) => h.finger_range(),
+        }
+    }
+
+    fn priority(&self) -> i32 {
+        match self {
+            Self::Pointer(h) => h.priority(),
+            Self::Scroll(h) => h.priority(),
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Pointer(h) => h.name(),
+            Self::Scroll(h) => h.name(),
+        }
+    }
+
+    fn begin(&mut self, touches: &[TouchPoint], prev: &[TouchPoint]) -> Vec<GestureEvent> {
+        match self {
+            Self::Pointer(h) => h.begin(touches, prev),
+            Self::Scroll(h) => h.begin(touches, prev),
+        }
+    }
+
+    fn update(&mut self, touches: &[TouchPoint], prev: &[TouchPoint]) -> Vec<GestureEvent> {
+        match self {
+            Self::Pointer(h) => h.update(touches, prev),
+            Self::Scroll(h) => h.update(touches, prev),
+        }
+    }
+
+    fn end(&mut self, all_fingers_up: bool) -> Vec<GestureEvent> {
+        match self {
+            Self::Pointer(h) => h.end(all_fingers_up),
+            Self::Scroll(h) => h.end(all_fingers_up),
+        }
+    }
+}
 
 pub struct GestureEngine {
-    handlers: Vec<Box<dyn GestureHandler>>,
+    handlers: Vec<GestureHandlerWrapper>,
     active: Option<usize>,
     prev_touches: Vec<TouchPoint>,
 }
 
 impl GestureEngine {
     pub fn new(config: Config) -> Self {
-        let handlers: Vec<Box<dyn GestureHandler>> = vec![
-            Box::new(PointerHandler::new(&config)),
-            Box::new(ScrollHandler::new(config)),
+        let handlers = vec![
+            GestureHandlerWrapper::Pointer(PointerHandler::new(&config)),
+            GestureHandlerWrapper::Scroll(ScrollHandler::new(config)),
         ];
 
         Self {
@@ -29,7 +80,10 @@ impl GestureEngine {
 
     pub fn process(&mut self, touches: &[TouchPoint]) -> Vec<GestureEvent> {
         let finger_count = touches.len() as u8;
-        trace!("引擎 process: {} 指, active={:?}", finger_count, self.active);
+        trace!(
+            "引擎 process: {} 指, active={:?}",
+            finger_count, self.active
+        );
 
         // 1. 所有手指离开 → 结束当前手势
         if finger_count == 0 {
@@ -42,7 +96,10 @@ impl GestureEngine {
         if let Some(idx) = self.active
             && !self.handlers[idx].finger_range().contains(&finger_count)
         {
-            debug!("手指数变化，切换 handler: {:?} → {}指", self.active, finger_count);
+            debug!(
+                "手指数变化，切换 handler: {:?} → {}指",
+                self.active, finger_count
+            );
             let mut events = self.deactivate(false);
             events.extend(self.try_activate(finger_count, touches));
             self.prev_touches = touches.to_vec();

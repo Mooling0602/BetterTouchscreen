@@ -115,8 +115,7 @@ impl Config {
     pub fn generate_config(path: Option<&str>) -> anyhow::Result<()> {
         let config_path = match path {
             Some(p) => p.to_string(),
-            None => default_config_path()
-                .ok_or_else(|| anyhow::anyhow!("无法确定默认配置目录"))?,
+            None => default_config_path().ok_or_else(|| anyhow::anyhow!("无法确定默认配置目录"))?,
         };
         let path = Path::new(&config_path);
         if let Some(parent) = path.parent() {

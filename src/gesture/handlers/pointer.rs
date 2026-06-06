@@ -52,8 +52,7 @@ impl GestureHandler for PointerHandler {
             (self.last_tap_end, self.last_tap_pos, start_pos)
         {
             let elapsed = end_time.elapsed().as_millis();
-            let dist =
-                ((start.0 - end_pos.0).powi(2) + (start.1 - end_pos.1).powi(2)).sqrt();
+            let dist = ((start.0 - end_pos.0).powi(2) + (start.1 - end_pos.1).powi(2)).sqrt();
             elapsed <= DOUBLE_TAP_MS && dist <= DOUBLE_TAP_RADIUS
         } else {
             false

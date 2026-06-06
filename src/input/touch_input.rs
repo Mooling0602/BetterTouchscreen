@@ -1,15 +1,11 @@
 use crate::types::TouchPoint;
 use anyhow::{Context, Result};
-use evdev::{AbsoluteAxisCode, BusType, Device, EventSummary, SynchronizationCode};
+use evdev::{AbsoluteAxisCode, BusType, Device, EventSummary, InputEvent, SynchronizationCode};
 use log::{debug, info, trace, warn};
 use std::fs::OpenOptions;
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::OpenOptionsExt;
-use std::time::Instant;
 
 const MAX_SLOTS: usize = 16;
-/// 陈旧 slot 清除阈值：tracking_id=-1 时，清理超过此时间未更新的 slot
-const STALE_SLOT_MS: u128 = 100;
 
 #[derive(Debug, Clone, Copy)]
 struct SlotInfo {
@@ -18,14 +14,14 @@ struct SlotInfo {
     y: i32,
     /// 首次 X 和 Y 都收到后才为 true，防止初始 0 值导致光标跳变
     initialized: bool,
-    /// 最后一次位置更新时间，用于检测陈旧 slot
-    last_update: Instant,
 }
 
 pub struct TouchScreen {
     device: Device,
     slots: [Option<SlotInfo>; MAX_SLOTS],
     current_slot: usize,
+    /// 当前批次中 SYN_REPORT 之后剩余的事件，留待下次 read_touch_frame 处理
+    buffered_events: Vec<InputEvent>,
 }
 
 pub fn list_touchscreens() -> Vec<(String, String, bool)> {
@@ -61,7 +57,6 @@ impl TouchScreen {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
-            .custom_flags(libc::O_NONBLOCK)
             .open(device_path)
             .with_context(|| format!("无法打开触屏设备: {}", device_path))?;
 
@@ -83,6 +78,7 @@ impl TouchScreen {
             device,
             slots: [None; MAX_SLOTS],
             current_slot: 0,
+            buffered_events: Vec::new(),
         })
     }
 
@@ -133,17 +129,29 @@ impl TouchScreen {
 
     pub fn read_touch_frame(&mut self) -> Result<Vec<TouchPoint>> {
         loop {
-            let events: Vec<_> = match self.device.fetch_events() {
-                Ok(iter) => iter.collect(),
-                Err(e) if e.raw_os_error() == Some(libc::EAGAIN) => {
-                    std::thread::sleep(std::time::Duration::from_millis(1));
-                    continue;
+            // 优先使用上次缓存的剩余事件，避免丢弃同一批次中的后续帧
+            let mut events: Vec<InputEvent> = if !self.buffered_events.is_empty() {
+                std::mem::take(&mut self.buffered_events)
+            } else {
+                match self.device.fetch_events() {
+                    Ok(iter) => iter.collect(),
+                    Err(e) => return Err(e.into()),
                 }
-                Err(e) => return Err(e.into()),
             };
-            if events.is_empty() {
-                std::thread::sleep(std::time::Duration::from_millis(1));
-                continue;
+
+            // 定位第一个 SYN_REPORT，它是当前帧的边界
+            let syn_pos = events.iter().position(|ev| {
+                matches!(
+                    ev.destructure(),
+                    EventSummary::Synchronization(_, SynchronizationCode::SYN_REPORT, _)
+                )
+            });
+
+            // 将 SYN_REPORT 之后的事件保存到缓冲区，供下次调用处理
+            if let Some(pos) = syn_pos
+                && pos + 1 < events.len()
+            {
+                self.buffered_events = events.split_off(pos + 1);
             }
 
             for ev in events {
@@ -162,19 +170,21 @@ impl TouchScreen {
                         AbsoluteAxisCode::ABS_MT_TRACKING_ID => {
                             if self.current_slot < MAX_SLOTS {
                                 if value == -1 {
-                                    self.slots[self.current_slot] = None;
-                                    // 清理陈旧 slot：驱动可能漏发 tracking_id=-1
-                                    let now = Instant::now();
-                                    for slot in self.slots.iter_mut() {
-                                        if let Some(info) = slot
-                                            && now.duration_since(info.last_update).as_millis() > STALE_SLOT_MS
-                                        {
-                                            trace!("清除陈旧 slot: tracking_id={}", info.tracking_id);
-                                            *slot = None;
+                                    if self.slots[self.current_slot].is_some() {
+                                        self.slots[self.current_slot] = None;
+                                    } else {
+                                        warn!(
+                                            "当前 slot {} 为空，遍历查找要清除的触摸点",
+                                            self.current_slot
+                                        );
+                                        for slot in self.slots.iter_mut() {
+                                            if slot.is_some() {
+                                                *slot = None;
+                                                break;
+                                            }
                                         }
                                     }
                                 } else {
-                                    // 清理同一 tracking_id 在其他槽位的旧数据
                                     for slot in self.slots.iter_mut() {
                                         if let Some(info) = slot
                                             && info.tracking_id == value
@@ -187,7 +197,6 @@ impl TouchScreen {
                                         x: 0,
                                         y: 0,
                                         initialized: false,
-                                        last_update: Instant::now(),
                                     });
                                 }
                             }
@@ -197,7 +206,6 @@ impl TouchScreen {
                                 && let Some(info) = &mut self.slots[self.current_slot]
                             {
                                 info.x = value;
-                                info.last_update = Instant::now();
                                 if !info.initialized && info.y != 0 {
                                     info.initialized = true;
                                 }
@@ -206,7 +214,6 @@ impl TouchScreen {
                         AbsoluteAxisCode::ABS_MT_POSITION_Y if self.current_slot < MAX_SLOTS => {
                             if let Some(info) = &mut self.slots[self.current_slot] {
                                 info.y = value;
-                                info.last_update = Instant::now();
                                 if !info.initialized && info.x != 0 {
                                     info.initialized = true;
                                 }
@@ -233,6 +240,7 @@ impl TouchScreen {
                     _ => {}
                 }
             }
+            // 无 SYN_REPORT：状态已更新，继续拉取下一批事件
         }
     }
 }

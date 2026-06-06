@@ -47,7 +47,11 @@ impl GestureHandler for ScrollHandler {
         self.warmup_remaining = WARMUP_FRAMES;
 
         debug!("手势开始: Scroll (2 指)");
-        vec![GestureEvent::new(GestureType::Scroll, 2, GestureState::Begin)]
+        vec![GestureEvent::new(
+            GestureType::Scroll,
+            2,
+            GestureState::Begin,
+        )]
     }
 
     fn update(&mut self, touches: &[TouchPoint], prev: &[TouchPoint]) -> Vec<GestureEvent> {
