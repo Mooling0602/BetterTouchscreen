@@ -157,7 +157,7 @@ fn main() -> Result<()> {
     };
 
     let mut engine = GestureEngine::new(config.clone());
-    let mut virtpad = VirtualTouchpad::new(config.hscroll_threshold)?;
+    let mut virtpad = VirtualTouchpad::new()?;
 
     info!("开始监听触控事件...");
 

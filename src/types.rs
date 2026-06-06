@@ -28,6 +28,8 @@ pub struct GestureEvent {
     pub is_drag: bool,
     /// 手势被中断（手指数变化导致 handler 切换），不应触发点击
     pub suppress_click: bool,
+    /// 手势期间发生过光标移动，用于区分点击与移动后释放
+    pub has_moved: bool,
 }
 
 impl GestureEvent {
@@ -42,6 +44,7 @@ impl GestureEvent {
             is_tap: false,
             is_drag: false,
             suppress_click: false,
+            has_moved: false,
         }
     }
 
@@ -186,6 +189,7 @@ mod tests {
             is_tap: true,
             is_drag: false,
             suppress_click: true,
+            has_moved: false,
         };
         e.apply_axis_transform(false, true, true);
         assert_eq!(e.gesture_type, GestureType::Scroll);

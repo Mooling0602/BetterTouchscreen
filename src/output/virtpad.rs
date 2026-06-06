@@ -23,20 +23,16 @@ pub struct VirtualTouchpad {
     subpixel_x: f64,
     subpixel_y: f64,
     // 滚动亚像素累积
-    scroll_sub_x: f64,
     scroll_sub_y: f64,
     /// 拖拽结束后延迟释放 BTN_LEFT 的截止时间
     drag_release_deadline: Option<Instant>,
-    /// 水平滚动最小阈值
-    hscroll_threshold: i32,
 }
 
 impl VirtualTouchpad {
-    pub fn new(hscroll_threshold: i32) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let mut keys = AttributeSet::<KeyCode>::new();
         keys.insert(KeyCode::BTN_LEFT);
         keys.insert(KeyCode::BTN_RIGHT);
-        keys.insert(KeyCode::KEY_LEFTSHIFT);
 
         let mut rel_axes = AttributeSet::<RelativeAxisCode>::new();
         rel_axes.insert(RelativeAxisCode::REL_X);
@@ -63,10 +59,8 @@ impl VirtualTouchpad {
             drag_active: false,
             subpixel_x: 0.0,
             subpixel_y: 0.0,
-            scroll_sub_x: 0.0,
             scroll_sub_y: 0.0,
             drag_release_deadline: None,
-            hscroll_threshold,
         })
     }
 
@@ -118,7 +112,6 @@ impl VirtualTouchpad {
                     self.subpixel_x = 0.0;
                     self.subpixel_y = 0.0;
                 } else if event.gesture_type == GestureType::Scroll {
-                    self.scroll_sub_x = 0.0;
                     self.scroll_sub_y = 0.0;
                 }
             }
@@ -163,14 +156,11 @@ impl VirtualTouchpad {
             }
             GestureType::Scroll => {
                 // 亚像素累积 + clamp 防止偶发大跳变
-                self.scroll_sub_x += event.delta_x.clamp(-5.0, 5.0);
                 self.scroll_sub_y += event.delta_y.clamp(-5.0, 5.0);
-                let int_x = self.scroll_sub_x as i32;
                 let int_y = self.scroll_sub_y as i32;
-                self.scroll_sub_x -= int_x as f64;
                 self.scroll_sub_y -= int_y as f64;
-                if int_x != 0 || int_y != 0 {
-                    emitter.emit_scroll(int_x as f64, int_y as f64, self.hscroll_threshold)?;
+                if int_y != 0 {
+                    emitter.emit_scroll(int_y)?;
                 }
             }
         }
@@ -205,11 +195,9 @@ impl VirtualTouchpad {
                 debug!("2 指轻触 → 右键");
                 let mut emitter = EventEmitter::new(&mut self.device);
                 emitter.emit_right_click()?;
-                self.scroll_sub_x = 0.0;
                 self.scroll_sub_y = 0.0;
             }
             GestureType::Scroll => {
-                self.scroll_sub_x = 0.0;
                 self.scroll_sub_y = 0.0;
             }
         }

@@ -42,11 +42,18 @@ fn pointer_single_finger_drag() {
     e.process(&[tp(100.0, 100.0)]); // Begin
     e.process(&[]); // End（轻触）
 
-    // 第二次按住 → 拖拽模式
+    // 第二次按住 → 拖拽待确认
     let events = e.process(&[tp(102.0, 101.0)]);
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].gesture_type, GestureType::Pointer);
-    assert!(events[0].is_drag); // 双击按住 → 拖拽
+    assert!(!events[0].is_drag); // 需保持足够时长才激活拖拽
+
+    // 等待保持时间后 update → 拖拽激活
+    std::thread::sleep(std::time::Duration::from_millis(90));
+    let events = e.process(&[tp(102.0, 101.0)]);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].state, GestureState::Update);
+    assert!(events[0].is_drag); // 拖拽已确认
 
     // 移动（灵敏度 0.5：dx=10*0.5=5, dy=5*0.5=2.5）
     let events = e.process(&[tp(112.0, 106.0)]);

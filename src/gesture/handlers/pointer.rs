@@ -10,6 +10,8 @@ use std::time::Instant;
 const DOUBLE_TAP_MS: u128 = 300;
 /// 双击最大距离（设备像素）：两次触摸位置的最大偏差
 const DOUBLE_TAP_RADIUS: f64 = 500.0;
+/// 拖拽最小保持时间（ms）：第二次触摸需按住超过此时长才确认拖拽
+const DRAG_HOLD_MS: u128 = 80;
 
 #[derive(Default)]
 pub struct PointerHandler {
@@ -20,6 +22,8 @@ pub struct PointerHandler {
     last_tap_end: Option<Instant>,
     last_tap_pos: Option<(f64, f64)>,
     touch_start_pos: Option<(f64, f64)>,
+    /// 双击已触发但尚未满足保持时间，等待确认拖拽
+    drag_pending: Option<Instant>,
 }
 
 impl PointerHandler {
@@ -58,17 +62,30 @@ impl GestureHandler for PointerHandler {
             false
         };
 
-        self.drag_active = is_double_tap;
+        self.drag_active = false;
         self.has_moved = false;
         self.touch_start_pos = start_pos;
         self.last_tap_end = None;
+        // 双击检测到但暂不激活拖拽，需满足最小保持时间
+        self.drag_pending = if is_double_tap {
+            Some(Instant::now())
+        } else {
+            None
+        };
 
-        let mut event = GestureEvent::new(GestureType::Pointer, 1, GestureState::Begin);
-        event.is_drag = is_double_tap;
+        let event = GestureEvent::new(GestureType::Pointer, 1, GestureState::Begin);
         vec![event]
     }
 
     fn update(&mut self, touches: &[TouchPoint], prev: &[TouchPoint]) -> Vec<GestureEvent> {
+        // 等待拖拽确认：双击后需按住超过 DRAG_HOLD_MS 才激活拖拽
+        if let Some(pending_since) = self.drag_pending {
+            if pending_since.elapsed().as_millis() >= DRAG_HOLD_MS {
+                self.drag_active = true;
+                self.drag_pending = None;
+            }
+        }
+
         let (Some(p), Some(c)) = (prev.first(), touches.first()) else {
             return vec![];
         };
@@ -88,8 +105,12 @@ impl GestureHandler for PointerHandler {
     }
 
     fn end(&mut self, all_fingers_up: bool) -> Vec<GestureEvent> {
+        // 拖拽未确认就释放（双击后未保持足够时长）→ 退化为普通点击
+        self.drag_pending = None;
+
         let mut event = GestureEvent::new(GestureType::Pointer, 1, GestureState::End);
         event.is_drag = self.drag_active;
+        event.has_moved = self.has_moved;
         // 因手指数变化被中断（非所有手指抬起）→ 不触发点击
         event.suppress_click = !all_fingers_up;
 
@@ -151,15 +172,39 @@ mod tests {
     }
 
     #[test]
-    fn double_tap_activates_drag() {
+    fn double_tap_activates_drag_after_hold() {
         let mut h = handler();
         // 第一次轻触
         h.begin(&[tp(100.0, 100.0)], &[]);
         h.end(true);
-        // 第二次按住 → 拖拽
+        // 第二次按住 → 拖拽未立即激活
         let events = h.begin(&[tp(102.0, 101.0)], &[]);
+        assert!(!events[0].is_drag);
+        assert!(!h.drag_active);
+        assert!(h.drag_pending.is_some());
+        // 保持足够时长后 update → 拖拽激活
+        std::thread::sleep(std::time::Duration::from_millis(DRAG_HOLD_MS as u64 + 10));
+        let events = h.update(&[tp(102.0, 101.0)], &[tp(102.0, 101.0)]);
         assert!(events[0].is_drag);
         assert!(h.drag_active);
+        assert!(h.drag_pending.is_none());
+    }
+
+    #[test]
+    fn rapid_double_tap_released_before_hold_is_click() {
+        let mut h = handler();
+        // 第一次轻触
+        h.begin(&[tp(100.0, 100.0)], &[]);
+        h.end(true);
+        // 第二次轻触（立即释放，未满足保持时间）
+        h.begin(&[tp(102.0, 101.0)], &[]);
+        let events = h.end(true);
+        // 拖拽未激活 → is_drag 为 false，且未 suppress
+        assert!(!events[0].is_drag);
+        assert!(!events[0].suppress_click);
+        assert!(!events[0].has_moved);
+        // 且记录了轻触位置（可继续连点）
+        assert!(h.last_tap_end.is_some());
     }
 
     #[test]

@@ -4,9 +4,17 @@ use crate::config::Config;
 use crate::gesture::handlers::GestureHandler;
 use crate::gesture::handlers::pointer::PointerHandler;
 use crate::gesture::handlers::scroll::ScrollHandler;
-use crate::types::{GestureEvent, TouchPoint};
+use crate::types::{GestureEvent, GestureState, GestureType, TouchPoint};
 use log::{debug, info, trace};
 use std::ops::RangeInclusive;
+
+/// 事件日志标签，用于"连续相同事件不重复通报"
+const TAG_CURSOR: u8 = 0;
+const TAG_SCROLL: u8 = 1;
+const TAG_DRAG_START: u8 = 2;
+const TAG_DRAG_END: u8 = 3;
+const TAG_CLICK: u8 = 4;
+const TAG_RIGHT_CLICK: u8 = 5;
 
 /// 静态分发的 gesture handler 包装枚举
 enum GestureHandlerWrapper {
@@ -69,6 +77,11 @@ pub struct GestureEngine {
     /// 本次触控周期（自所有手指抬起以来）已通过 info 级别通告过的手势
     /// handler 位掩码，避免同手势重复 info
     logged_mask: u8,
+    /// 本次触控周期已通过 info 级别通告过的连续事件位掩码
+    /// bit 0: 光标移动  bit 1: 滚动  bit 2: 拖拽开始
+    event_mask: u8,
+    /// 上一次 info 通报的事件标签，用于连续相同事件去重
+    last_tag: Option<u8>,
 }
 
 impl GestureEngine {
@@ -85,6 +98,8 @@ impl GestureEngine {
             was_multitouch: false,
             config,
             logged_mask: 0,
+            event_mask: 0,
+            last_tag: None,
         }
     }
 
@@ -100,6 +115,8 @@ impl GestureEngine {
             let mut events = self.deactivate(true);
             self.prev_touches.clear();
             self.was_multitouch = false;
+            self.event_mask = 0;
+            self.log_events(&events);
             self.apply_config_transform(&mut events);
             return events;
         }
@@ -126,11 +143,13 @@ impl GestureEngine {
             if was_multifinger && finger_count > 0 && finger_count < handler_min {
                 self.was_multitouch = true;
                 self.prev_touches = touches.to_vec();
+                self.log_events(&events);
                 self.apply_config_transform(&mut events);
                 return events;
             }
             events.extend(self.try_activate(finger_count, touches));
             self.prev_touches = touches.to_vec();
+            self.log_events(&events);
             self.apply_config_transform(&mut events);
             return events;
         }
@@ -139,6 +158,7 @@ impl GestureEngine {
         if self.active.is_none() {
             let mut events = self.try_activate(finger_count, touches);
             self.prev_touches = touches.to_vec();
+            self.log_events(&events);
             self.apply_config_transform(&mut events);
             return events;
         }
@@ -148,8 +168,69 @@ impl GestureEngine {
         trace!("引擎 update 产生 {} 个事件", events.len());
 
         self.prev_touches = touches.to_vec();
+        self.log_events(&events);
         self.apply_config_transform(&mut events);
         events
+    }
+
+    /// 通报手势事件到日志。
+    /// 连续事件（光标移动、滚动、拖拽开始）每触控周期最多 info 一次；
+    /// 所有事件若与上条 tag 相同则降为 debug。
+    /// 去重仅作用于 info 级别，debug 级别不受影响。
+    fn log_events(&mut self, events: &[GestureEvent]) {
+        for event in events {
+            let n = event.fingers;
+
+            // 确定事件标签和是否本周期首次（影响 info 资格）
+            let (tag, msg, mask_bit): (u8, &str, Option<u8>) =
+                match (event.gesture_type, event.state) {
+                    (GestureType::Pointer, GestureState::Begin | GestureState::Update)
+                        if event.is_drag =>
+                    {
+                        (TAG_DRAG_START, "拖拽开始", Some(4))
+                    }
+                    (GestureType::Pointer, GestureState::Update) => {
+                        if event.delta_x.abs() < 1.0 && event.delta_y.abs() < 1.0 {
+                            continue;
+                        }
+                        (TAG_CURSOR, "光标移动", Some(1))
+                    }
+                    (GestureType::Pointer, GestureState::End) if event.is_drag => {
+                        (TAG_DRAG_END, "拖拽结束", None)
+                    }
+                    (GestureType::Pointer, GestureState::End)
+                        if !event.is_drag && !event.suppress_click && !event.has_moved =>
+                    {
+                        (TAG_CLICK, "左键点击", None)
+                    }
+                    (GestureType::Scroll, GestureState::Update) => {
+                        if event.delta_y.abs() < 1.0 {
+                            continue;
+                        }
+                        (TAG_SCROLL, "滚动", Some(2))
+                    }
+                    (GestureType::Scroll, GestureState::End) if event.is_tap => {
+                        (TAG_RIGHT_CLICK, "右键点击", None)
+                    }
+                    _ => continue,
+                };
+
+            // 判断 info 资格：本周期首次 且 与上条不同
+            let is_new_cycle = mask_bit.map_or(true, |b| self.event_mask & b == 0);
+            let is_new_tag = self.last_tag != Some(tag);
+            let log_info = is_new_cycle && is_new_tag;
+
+            if let Some(b) = mask_bit {
+                self.event_mask |= b;
+            }
+
+            if log_info {
+                info!("手势事件 ({} 指): {}", n, msg);
+                self.last_tag = Some(tag);
+            } else {
+                debug!("手势事件 ({} 指): {}", n, msg);
+            }
+        }
     }
 
     fn apply_config_transform(&self, events: &mut [GestureEvent]) {
@@ -186,7 +267,7 @@ impl GestureEngine {
             let fingers = finger_count;
             let bit = 1u8 << idx;
             if self.logged_mask & bit == 0 {
-                info!("手势切换: {} ({} 指)", name, fingers);
+                info!("手势切换 ({} 指)", fingers);
                 self.logged_mask |= bit;
             } else {
                 debug!("激活 handler: {} ({} 指)", name, fingers);
