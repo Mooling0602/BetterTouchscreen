@@ -10,73 +10,45 @@ Begin → Update → ... → Update → End
 
 | 阶段 | 说明 |
 |------|------|
-| `Begin` | 手指数量/位置满足手势触发条件，手势被识别并开始 |
-| `Update` | 手指在屏幕上移动，手势持续更新（delta、scale、rotation 等） |
+| `Begin` | 手指数量满足手势触发条件，手势被识别 |
+| `Update` | 手指移动，手势持续产生 delta 事件 |
 | `End` | 手指离开屏幕，手势结束 |
 
-## 默认手势
+## 已实现手势
 
-### 单指操作
-
-#### 1.1 光标移动 + 点击（Pointer）
+### 单指操作（Pointer）
 
 | 属性 | 值 |
 |------|-----|
 | 手指数 | 1 |
-| 触发条件 | 单指在屏幕上触摸即触发 |
-| 触地 | 按下左键（BTN_LEFT press），光标开始跟踪手指位移 |
-| 移动 | 输出 `REL_X`/`REL_Y` 相对位移事件，光标跟随手指移动（触屏拖拽） |
-| 抬起 | 释放左键（BTN_LEFT release），若未移动则形成单击 |
-| 输出 | 虚拟触摸板光标事件 |
+| 触发条件 | 单指触摸屏幕即触发 |
+| 移动 | 输出 `REL_X`/`REL_Y` 相对位移，光标跟随手指移动 |
+| 轻触抬起 | 无移动则触发左键点击（BTN_LEFT） |
+| 双击按住 | 300ms 内两次轻触同一位置，第二次不抬起则进入拖拽模式（BTN_LEFT 按下），手指移动产生拖拽效果，抬起释放 |
 
-**使用场景**：模拟触摸板的基本光标操作（移动、点击、拖拽）。程序 grab 触屏后这是唯一的光标输入来源。
+**使用场景**：模拟触摸板的光标操作（移动、点击、拖拽）。程序 grab 触屏后这是唯一的光标输入来源。
 
-### 双指操作
-
-#### 2.1 滚动（Scroll）
+### 双指操作（Scroll）
 
 | 属性 | 值 |
 |------|-----|
 | 手指数 | 2 |
-| 触发条件 | 两指同时在屏幕上移动 |
-| 输出 | 触摸板双指滚动事件（`REL_WHEEL` / `REL_HWHEEL`） |
-| 方向 | delta_x → 水平滚动，delta_y → 垂直滚动 |
+| 触发条件 | 两指同时在屏幕上，有 3 帧预热期避免初始质心跳变 |
+| 移动 | 双指质心移动输出滚动事件。垂直分量通过 `REL_WHEEL` 输出；水平分量超过 `hscroll_threshold` 时模拟 Shift + 滚轮实现横向滚动 |
+| 轻触 | 双指按下后无移动即抬起 → 右键点击（BTN_RIGHT） |
 
-**使用场景**：网页滚动、文档翻页、列表浏览。
+**使用场景**：网页滚动、文档翻页、右键上下文菜单。
 
-## 手势阈值参数
+## 配置参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `scroll_threshold` | 5.0 px | 双指滚动最小位移 |
-| `pinch_threshold` | 0.02 | 捏合最小 scale 变化 |
-| `swipe_threshold` | 50.0 px | 滑动最小位移距离 |
-| `swipe_deadzone` | 30.0 px | 滑动方向判定的死区范围 |
-
-## 配置文件格式（规划）
-
-```toml
-# config.toml
-
-[gestures.scroll]
-fingers = 2
-threshold = 5.0
-natural_scroll = true   # 自然滚动方向
-
-[gestures.pinch]
-fingers = 2
-threshold = 0.02
-
-[gestures.swipe_3f]
-fingers = 3
-threshold = 50.0
-deadzone = 30.0
-
-[gestures.swipe_4f]
-fingers = 4
-threshold = 50.0
-deadzone = 30.0
-
-[devices]
-touchscreen = "/dev/input/eventX"  # 触屏设备路径
-```
+| `scroll_sensitivity` | 0.05 | 滚动灵敏度 |
+| `pointer_sensitivity` | 0.5 | 光标灵敏度 |
+| `hscroll_threshold` | 2 | 水平滚动最小阈值（设备像素），低于此值不触发 Shift 横向滚动 |
+| `swap_axes` | false | 交换 X/Y 轴（90°/270° 屏幕旋转） |
+| `invert_x` | false | X 轴反转（180° 旋转 / 镜像） |
+| `invert_y` | false | Y 轴反转（180° 旋转 / 镜像） |
+| `debug_overlay` | false | 启用调试叠加层，显示触控点 |
+| `touchscreen_device` | (自动) | 触屏设备路径，留空则自动查找 |

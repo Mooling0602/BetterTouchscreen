@@ -37,9 +37,10 @@
 
 ```toml
 scroll_threshold = 5.0
-pinch_threshold = 0.02
-swipe_threshold = 50.0
-swipe_deadzone = 30.0
+scroll_sensitivity = 0.05
+pointer_sensitivity = 0.5
+hscroll_threshold = 2
+debug_overlay = false
 ```
 
 ## 其他
